@@ -21,6 +21,7 @@ Options:
   -t, --tty            Allocate a pseudo-TTY
   -u, --user           Username or UID (format: <name|uid>[:<group|gid>])
   -w, --workdir        Working directory inside the container
+      --env-file       Set environment variables from file
 ```
 
 ## Description

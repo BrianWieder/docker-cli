@@ -3,6 +3,7 @@ package container
 import (
 	"context"
 	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/docker/cli/cli"
@@ -24,6 +25,16 @@ func withDefaultOpts(options execOptions) execOptions {
 }
 
 func TestParseExec(t *testing.T) {
+	content := `ONE=1
+TWO=2
+	`
+
+	tmpFile := tmpFileWithContent(content, t)
+	defer os.Remove(tmpFile)
+
+	envOptions := withDefaultOpts(execOptions{envFile: tmpFile})
+	envOptions.env.Set("THREE=3")
+
 	testcases := []struct {
 		options    execOptions
 		configFile configfile.ConfigFile
@@ -102,11 +113,30 @@ func TestParseExec(t *testing.T) {
 				Detach:     true,
 			},
 		},
+		{
+			expected: types.ExecConfig{
+				Cmd:          []string{"command"},
+				AttachStdout: true,
+				AttachStderr: true,
+				Env:          []string{"ONE=1", "TWO=2"},
+			},
+			options: withDefaultOpts(execOptions{envFile: tmpFile}),
+		},
+		{
+			expected: types.ExecConfig{
+				Cmd:          []string{"command"},
+				AttachStdout: true,
+				AttachStderr: true,
+				Env:          []string{"THREE=3", "ONE=1", "TWO=2"},
+			},
+			options: envOptions,
+		},
 	}
 
 	for _, testcase := range testcases {
-		execConfig := parseExec(testcase.options, &testcase.configFile)
+		execConfig, err := parseExec(testcase.options, &testcase.configFile)
 		assert.Check(t, is.DeepEqual(testcase.expected, *execConfig))
+		assert.NilError(t, err)
 	}
 }
 
@@ -224,4 +254,15 @@ func TestNewExecCommandErrors(t *testing.T) {
 		cmd.SetArgs(tc.args)
 		assert.ErrorContains(t, cmd.Execute(), tc.expectedError)
 	}
+}
+
+func tmpFileWithContent(content string, t *testing.T) string {
+	tmpFile, err := ioutil.TempFile("", "envfile-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tmpFile.Close()
+
+	tmpFile.WriteString(content)
+	return tmpFile.Name()
 }

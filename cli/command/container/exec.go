@@ -27,6 +27,7 @@ type execOptions struct {
 	workdir     string
 	container   string
 	command     []string
+	envFile     string
 }
 
 func newExecOptions() execOptions {
@@ -61,12 +62,18 @@ func NewExecCommand(dockerCli command.Cli) *cobra.Command {
 	flags.SetAnnotation("env", "version", []string{"1.25"})
 	flags.StringVarP(&options.workdir, "workdir", "w", "", "Working directory inside the container")
 	flags.SetAnnotation("workdir", "version", []string{"1.35"})
+	flags.StringVar(&options.envFile, "env-file", "", "Set environment variables from file")
 
 	return cmd
 }
 
 func runExec(dockerCli command.Cli, options execOptions) error {
-	execConfig := parseExec(options, dockerCli.ConfigFile())
+	execConfig, err := parseExec(options, dockerCli.ConfigFile())
+
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	client := dockerCli.Client()
 
@@ -185,30 +192,38 @@ func getExecExitStatus(ctx context.Context, client apiclient.ContainerAPIClient,
 
 // parseExec parses the specified args for the specified command and generates
 // an ExecConfig from it.
-func parseExec(opts execOptions, configFile *configfile.ConfigFile) *types.ExecConfig {
+func parseExec(execOpts execOptions, configFile *configfile.ConfigFile) (*types.ExecConfig, error) {
 	execConfig := &types.ExecConfig{
-		User:       opts.user,
-		Privileged: opts.privileged,
-		Tty:        opts.tty,
-		Cmd:        opts.command,
-		Detach:     opts.detach,
-		Env:        opts.env.GetAll(),
-		WorkingDir: opts.workdir,
+		User:       execOpts.user,
+		Privileged: execOpts.privileged,
+		Tty:        execOpts.tty,
+		Cmd:        execOpts.command,
+		Detach:     execOpts.detach,
+		Env:        execOpts.env.GetAll(),
+		WorkingDir: execOpts.workdir,
+	}
+
+	if execOpts.envFile != "" {
+		envs, err := opts.ParseEnvFile(execOpts.envFile)
+		if err != nil {
+			return nil, err
+		}
+		execConfig.Env = append(execConfig.Env, envs...)
 	}
 
 	// If -d is not set, attach to everything by default
-	if !opts.detach {
+	if !execOpts.detach {
 		execConfig.AttachStdout = true
 		execConfig.AttachStderr = true
-		if opts.interactive {
+		if execOpts.interactive {
 			execConfig.AttachStdin = true
 		}
 	}
 
-	if opts.detachKeys != "" {
-		execConfig.DetachKeys = opts.detachKeys
+	if execOpts.detachKeys != "" {
+		execConfig.DetachKeys = execOpts.detachKeys
 	} else {
 		execConfig.DetachKeys = configFile.DetachKeys
 	}
-	return execConfig
+	return execConfig, nil
 }
